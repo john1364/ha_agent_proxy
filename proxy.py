@@ -1,4 +1,4 @@
-import re
+import re, time
 import os, json, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -11,12 +11,48 @@ def ask(text):
     body = json.dumps({"text": text, "agent_id": AGENT, "language": "ru"}).encode()
     req = urllib.request.Request(HA + "/conversation/process", data=body,
         headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=15) as r:
         d = json.loads(r.read().decode())
     sp = (d.get("response") or {}).get("speech")
     if isinstance(sp, dict):
         sp = (sp.get("plain") or {}).get("speech") or ""
     return sp or ""
+
+def clean(text):
+    ans, bad = "", False
+    for i in range(5):
+        try:
+            ans = ask(text)
+        except Exception as e:
+            ans = "proxy-error: %s" % e
+            break
+        if not re.search(r"DSML|｜|<\|", ans or ""):
+            bad = False
+            break
+        bad = True
+        ans = ""
+        time.sleep(0.2)
+    ans = (ans or "").strip()
+    if bad:
+        ans = "Не получилось выполнить команду, повторите."
+    if re.fullmatch(r"\(?\s*пуст.*?\)?\s*\.?", ans, flags=re.I):
+        ans = "."
+    return ans
+
+def extract(req):
+    msgs = req.get("messages") or []
+    text, prev = "", ""
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i].get("role") == "user":
+            c = msgs[i].get("content")
+            text = " ".join(x.get("text", "") for x in c) if isinstance(c, list) else str(c or "")
+            if i > 0 and msgs[i - 1].get("role") == "assistant":
+                c2 = msgs[i - 1].get("content")
+                prev = " ".join(x.get("text", "") for x in c2) if isinstance(c2, list) else str(c2 or "")
+            break
+    if prev and prev.strip().endswith("?"):
+        text = "Ответ на уточняющий вопрос «" + prev + "»: " + text
+    return text
 
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -25,19 +61,7 @@ class H(BaseHTTPRequestHandler):
             req = json.loads(self.rfile.read(n) or b"{}")
         except Exception:
             req = {}
-        text = ""
-        for m in reversed(req.get("messages") or []):
-            if m.get("role") == "user":
-                c = m.get("content")
-                text = " ".join(x.get("text", "") for x in c) if isinstance(c, list) else str(c or "")
-                break
-        try:
-            ans = ask(text)
-            ans = ans.strip()
-            if re.fullmatch(r"\(?\s*пуст.*?\)?\s*\.?", ans, flags=re.I) or ans == "":
-                ans = "."
-        except Exception as e:
-            ans = "proxy-error: %s" % e
+        ans = clean(extract(req))
         model = req.get("model") or "ha-agent"
         if req.get("stream"):
             self.send_response(200)
