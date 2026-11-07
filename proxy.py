@@ -11,7 +11,7 @@ def ask(text):
     body = json.dumps({"text": text, "agent_id": AGENT, "language": "ru"}).encode()
     req = urllib.request.Request(HA + "/conversation/process", data=body,
         headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=15) as r:
+    with urllib.request.urlopen(req, timeout=25) as r:
         d = json.loads(r.read().decode())
     sp = (d.get("response") or {}).get("speech")
     if isinstance(sp, dict):

@@ -1,5 +1,5 @@
 name: HA Agent Proxy
-version: "1.0.9"
+version: "1.0.10"
 slug: ha_agent_proxy
 description: OpenAI-compatible proxy to the Home Assistant conversation agent
 arch:
